@@ -4,6 +4,7 @@ import {
   getProduct,
   KrogerUpstreamError,
   searchLocations,
+  searchProducts,
 } from "./kroger-api.mjs";
 
 const json = (response, statusCode, body) => {
@@ -41,6 +42,23 @@ const parseLocationQuery = (url) => {
     return { error: "Search radius must be an integer from 1 to 100 miles." };
   }
   return { zipCode, radiusInMiles };
+};
+
+const parseProductSearchQuery = (url) => {
+  const term = (url.searchParams.get("term") ?? "").trim();
+  if (
+    term.length < 2 ||
+    term.length > 100 ||
+    term.split(/\s+/).length > 8
+  ) {
+    return { error: "Enter a product search with 2 to 100 characters." };
+  }
+
+  const locationId = (url.searchParams.get("locationId") ?? "").trim();
+  if (!/^[A-Za-z0-9_-]{1,30}$/.test(locationId)) {
+    return { error: "Enter a valid Kroger location ID." };
+  }
+  return { term, locationId };
 };
 
 const errorResponse = (error, logger) => {
@@ -107,6 +125,23 @@ export const createKrogerServer = ({
       }
       try {
         const data = await searchLocations({ ...parsed, config, fetcher });
+        return json(response, 200, { status: "success", data });
+      } catch (error) {
+        const mapped = errorResponse(error, logger);
+        return json(response, mapped.statusCode, {
+          status: "error",
+          message: mapped.message,
+        });
+      }
+    }
+
+    if (url.pathname === "/v1/products/search") {
+      const parsed = parseProductSearchQuery(url);
+      if (parsed.error) {
+        return json(response, 400, { status: "error", message: parsed.error });
+      }
+      try {
+        const data = await searchProducts({ ...parsed, config, fetcher });
         return json(response, 200, { status: "success", data });
       } catch (error) {
         const mapped = errorResponse(error, logger);

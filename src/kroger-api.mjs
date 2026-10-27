@@ -54,6 +54,53 @@ const normalizeLocations = (payload) => {
   });
 };
 
+const optionalText = (value) =>
+  typeof value === "string" && value.trim() ? value.trim() : null;
+
+const normalizePrice = (value) => {
+  const numericValue =
+    typeof value === "number"
+      ? value
+      : typeof value === "string" && value.trim()
+        ? Number(value)
+        : Number.NaN;
+  return Number.isFinite(numericValue) && numericValue >= 0
+    ? numericValue.toFixed(2)
+    : null;
+};
+
+const normalizeProductSuggestions = (payload) => {
+  if (!payload || !Array.isArray(payload.data)) {
+    throw new KrogerUpstreamError("product search response parsing");
+  }
+
+  const suggestions = [];
+  for (const product of payload.data) {
+    const productName = optionalText(product?.description);
+    if (!productName) continue;
+
+    const items = Array.isArray(product.items) ? product.items : [product];
+    for (const item of items) {
+      const upcValue = optionalText(item?.itemId) ?? optionalText(product.productId);
+      const upc = upcValue && /^\d{1,20}$/.test(upcValue) ? upcValue : null;
+      const regularPrice = normalizePrice(item?.price?.regular);
+      const promoPrice = normalizePrice(item?.price?.promo);
+
+      suggestions.push({
+        upc,
+        productName,
+        brand: optionalText(product.brand),
+        packageSize: optionalText(item?.size) ?? optionalText(product.size),
+        regularPrice,
+        promoPrice,
+        currentPrice: promoPrice ?? regularPrice,
+      });
+    }
+  }
+
+  return suggestions;
+};
+
 const getAccessToken = async ({ config, fetcher, scope }) => {
   if (!config.clientId || !config.clientSecret) {
     const error = new Error("Kroger API credentials are not configured.");
@@ -162,4 +209,24 @@ export const getProduct = async ({
     fetcher,
     stage: "product request",
   });
+};
+
+export const searchProducts = async ({
+  term,
+  locationId,
+  config,
+  fetcher = globalThis.fetch,
+}) => {
+  const token = await getAccessToken({ config, fetcher, scope: "product.compact" });
+  const url = new URL(`${config.apiBaseUrl.replace(/\/$/, "")}/v1/products`);
+  url.searchParams.set("filter.term", term);
+  url.searchParams.set("filter.locationId", locationId);
+  url.searchParams.set("filter.limit", "10");
+  const payload = await getKrogerResponse({
+    url,
+    token,
+    fetcher,
+    stage: "product search request",
+  });
+  return normalizeProductSuggestions(payload);
 };
