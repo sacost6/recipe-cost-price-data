@@ -7,6 +7,7 @@ import {
   searchProducts,
 } from "./kroger-api.mjs";
 
+// Create a JSON response with the given status code and body.
 const json = (response, statusCode, body) => {
   response.writeHead(statusCode, {
     "content-type": "application/json; charset=utf-8",
@@ -16,6 +17,7 @@ const json = (response, statusCode, body) => {
   response.end(JSON.stringify(body));
 };
 
+// Check if the provided token matches the expected token using a timing-safe comparison.
 const tokenMatches = (provided, expected) => {
   if (!provided || !expected) return false;
   const providedBuffer = Buffer.from(provided);
@@ -26,6 +28,7 @@ const tokenMatches = (provided, expected) => {
   );
 };
 
+// Parse and validate the query parameters for location search.
 const parseLocationQuery = (url) => {
   const zipCode = (url.searchParams.get("zipCode") ?? "").trim();
   if (!/^\d{5}(?:-\d{4})?$/.test(zipCode)) {
@@ -44,13 +47,10 @@ const parseLocationQuery = (url) => {
   return { zipCode, radiusInMiles };
 };
 
+// Parse and validate the query parameters for product search.
 const parseProductSearchQuery = (url) => {
   const term = (url.searchParams.get("term") ?? "").trim();
-  if (
-    term.length < 2 ||
-    term.length > 100 ||
-    term.split(/\s+/).length > 8
-  ) {
+  if (term.length < 2 || term.length > 100 || term.split(/\s+/).length > 8) {
     return { error: "Enter a product search with 2 to 100 characters." };
   }
 
@@ -61,6 +61,7 @@ const parseProductSearchQuery = (url) => {
   return { term, locationId };
 };
 
+// Handle errors from upstream Kroger API requests and map them to appropriate HTTP responses.
 const errorResponse = (error, logger) => {
   if (error?.statusCode === 503) {
     return {
@@ -82,6 +83,7 @@ const errorResponse = (error, logger) => {
   return { statusCode: 502, message: "Unable to complete the Kroger request." };
 };
 
+// Create a custom HTTP server for the Kroger service with the provided configuration, fetcher, and logger.
 export const createKrogerServer = ({
   config = {
     port: Number(process.env.PORT ?? 3001),
@@ -102,7 +104,6 @@ export const createKrogerServer = ({
     if (request.method === "GET" && url.pathname === "/healthz") {
       return json(response, 200, { status: "ok" });
     }
-
     if (request.method !== "GET") {
       return json(response, 405, {
         status: "error",
@@ -110,6 +111,9 @@ export const createKrogerServer = ({
       });
     }
 
+    // Check the authorization header for a valid bearer token.
+    // If the token is missing or invalid, return a 401 Unauthorized response.
+    // Use a timing-safe comparison to prevent timing attacks.
     const authorization = request.headers.authorization ?? "";
     const suppliedToken = authorization.startsWith("Bearer ")
       ? authorization.slice("Bearer ".length)
